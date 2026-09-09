@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NAI5 reverse tagger</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --card: #fff;
+      --ink: #1f1b16;
+      --muted: #6b6258;
+      --line: #d9d0c4;
+      --accent: #3d6b8c;
+      --accent-ink: #fff;
+      --warn: #8a3b2b;
+      --chip: #efe6d9;
+      --on: #2f6f4e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0 auto;
+      max-width: 920px;
+      padding: 24px 16px 64px;
+      font: 15px/1.5 "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+    }
+    h1 { font-size: 1.35rem; font-weight: 650; margin: 0 0 8px; }
+    .lead { color: var(--muted); margin: 0 0 16px; }
+    .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 12px 0; }
+    .drop {
+      border: 2px dashed var(--line);
+      border-radius: 12px;
+      padding: 28px 16px;
+      text-align: center;
+      background: var(--card);
+      cursor: pointer;
+    }
+    .drop.drag { border-color: var(--accent); background: #eef4f8; }
+    .drop input { display: none; }
+    button, .chip button {
+      border: 0;
+      border-radius: 8px;
+      padding: 8px 12px;
+      background: var(--accent);
+      color: var(--accent-ink);
+      cursor: pointer;
+      font: inherit;
+    }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    button.ghost, .chip button {
+      background: var(--chip);
+      color: var(--ink);
+    }
+    #status {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      min-height: 2em; color: var(--muted);
+    }
+    #status .stage { padding: 2px 8px; border-radius: 999px; background: #e6e0d6; }
+    #status .stage.on { background: #d5eadc; color: var(--on); }
+    #status .stage.skip { text-decoration: line-through; opacity: 0.6; }
+    #status-text { color: var(--warn); }
+    .box {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      margin: 12px 0;
+    }
+    .box header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .box pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 0;
+      font: 13px/1.45 ui-monospace, Consolas, monospace;
+    }
+    .chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--chip); border-radius: 999px; padding: 4px 6px 4px 10px; margin: 4px;
+    }
+    .chip button { padding: 4px 8px; border-radius: 999px; font-size: 12px; }
+    #warnings li { color: var(--warn); }
+    details { margin-top: 16px; color: var(--muted); }
+    .filename { color: var(--muted); margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>NAI5 reverse tagger</h1>
+  <p class="lead">Upload an anime image. Get a NovelAI V5 base prompt, one spatial/interaction sentence, and per-character Danbooru tags with source# / target#.</p>
+  <div id="drop" class="drop">
+    Drop an image here, or click to choose
+    <div class="filename" id="filename"></div>
+    <input id="file" type="file" accept="image/*">
+  </div>
+  <div class="row">
+    <label><input id="include-nl" type="checkbox"> Natural-language sentence</label>
+    <button id="run" disabled>Reverse</button>
+    <button id="copy-all" class="ghost" hidden>Copy all</button>
+  </div>
+  <div id="status">
+    <span class="stage" data-stage="metadata">metadata</span>
+    <span class="stage" data-stage="wd14">wd14</span>
+    <span class="stage" data-stage="grok">vision</span>
+    <span class="stage" data-stage="compile">compile</span>
+    <span id="status-text"></span>
+  </div>
+  <ul id="warnings"></ul>
+  <div id="unassigned"></div>
+  <div id="boxes"></div>
+  <details id="ignored-wrap" hidden>
+    <summary>Ignored</summary>
+    <div id="ignored"></div>
+  </details>
+  <script>
+    const drop = document.getElementById("drop");
+    const fileInput = document.getElementById("file");
+    const runBtn = document.getElementById("run");
+    const copyAllBtn = document.getElementById("copy-all");
+    const nlBox = document.getElementById("include-nl");
+    const filenameEl = document.getElementById("filename");
+    const statusText = document.getElementById("status-text");
+    const warningsEl = document.getElementById("warnings");
+    const unassignedEl = document.getElementById("unassigned");
+    const boxesEl = document.getElementById("boxes");
+    const ignoredWrap = document.getElementById("ignored-wrap");
+    const ignoredEl = document.getElementById("ignored");
+    let selectedFile = null;
+    let state = { prompt: null, text: "" };
+    let gatewayOk = false;
+    let nlTouched = false;
+    nlBox.addEventListener("change", () => { nlTouched = true; });
+
+    function setStatusText(text) {
+      statusText.textContent = text || "";
+    }
+    function setStages(active, skipped) {
+      document.querySelectorAll("#status .stage").forEach((el) => {
+        const name = el.getAttribute("data-stage");
+        el.classList.toggle("on", (active || []).includes(name));
+        el.classList.toggle("skip", (skipped || []).includes(name));
+      });
+    }
+    async function copyText(text) {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        ta.remove();
+      }
+    }
+    function parseSections(text) {
+      const matches = [...text.matchAll(/^(Prompt:|Character \d+:|UC:)$/gm)];
+      return matches.map((m, i) => {
+        const title = m[1].replace(/:$/, "");
+        const start = m.index + m[0].length;
+        const end = i + 1 < matches.length ? matches[i + 1].index : text.length;
+        let body = text.slice(start, end);
+        if (body.startsWith("\n")) body = body.slice(1);
+        body = body.replace(/\n+$/, "");
+        let dest = null;
+        if (title === "Prompt") dest = "base";
+        const cm = /^Character (\d+)$/.exec(title);
+        if (cm) dest = "char:" + (Number(cm[1]) - 1);
+        return { title, body, dest };
+      });
+    }
+    function destButtons(prompt) {
+      const items = [{ dest: "base", label: "base" }];
+      (prompt.characters || []).forEach((_, i) => {
+        items.push({ dest: "char:" + i, label: "char " + (i + 1) });
+      });
+      return items;
+    }
+    function renderResult(data) {
+      state = { prompt: data.prompt, text: data.text || "" };
+      const prompt = data.prompt || {};
+      const meta = prompt.meta || {};
+      if (!nlTouched) {
+        const count = Number(meta.character_count || (prompt.characters || []).length);
+        nlBox.checked = count >= 2;
+      }
+      if (meta.source === "metadata") {
+        setStages(["metadata"]);
+        setStatusText("metadata");
+      } else {
+        const skipped = meta.wd14_skipped ? ["wd14"] : [];
+        const active = meta.wd14_skipped ? ["grok", "compile"] : ["wd14", "grok", "compile"];
+        setStages(active, skipped);
+        setStatusText(meta.wd14_skipped ? "compile (wd14 skipped)" : "compile");
+      }
+      warningsEl.innerHTML = "";
+      (prompt.warnings || []).forEach((w) => {
+        const li = document.createElement("li");
+        li.textContent = w;
+        warningsEl.appendChild(li);
+      });
+      unassignedEl.innerHTML = "";
+      const tags = prompt.unassigned || [];
+      if (tags.length) {
+        const label = document.createElement("div");
+        label.textContent = "Unassigned (drop onto a box, or click a destination)";
+        unassignedEl.appendChild(label);
+        tags.forEach((tag) => {
+          const chip = document.createElement("div");
+          chip.className = "chip";
+          chip.draggable = true;
+          chip.addEventListener("dragstart", (ev) => {
+            ev.dataTransfer.setData("text/plain", tag);
+          });
+          const name = document.createElement("span");
+          name.textContent = tag;
+          chip.appendChild(name);
+          destButtons(prompt).forEach((item) => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.textContent = item.label;
+            btn.addEventListener("click", () => assignTag(tag, item.dest));
+            chip.appendChild(btn);
+          });
+          unassignedEl.appendChild(chip);
+        });
+      }
+      boxesEl.innerHTML = "";
+      parseSections(state.text).forEach((sec) => {
+        const box = document.createElement("section");
+        box.className = "box";
+        if (sec.dest) {
+          box.addEventListener("dragover", (ev) => ev.preventDefault());
+          box.addEventListener("drop", (ev) => {
+            ev.preventDefault();
+            const tag = ev.dataTransfer.getData("text/plain");
+            if (tag) assignTag(tag, sec.dest);
+          });
+        }
+        const header = document.createElement("header");
+        const h = document.createElement("strong");
+        h.textContent = sec.title;
+        const copyBtn = document.createElement("button");
+        copyBtn.type = "button";
+        copyBtn.className = "ghost";
+        copyBtn.textContent = "Copy";
+        copyBtn.addEventListener("click", () => copyText(sec.body));
+        header.append(h, copyBtn);
+        const pre = document.createElement("pre");
+        pre.textContent = sec.body;
+        box.append(header, pre);
+        boxesEl.appendChild(box);
+      });
+      copyAllBtn.hidden = !state.text;
+      const ignored = prompt.ignored || [];
+      ignoredWrap.hidden = ignored.length === 0;
+      ignoredEl.textContent = ignored.join(", ");
+    }
+    async function assignTag(tag, dest) {
+      if (!state.prompt) return;
+      const res = await fetch("/api/assign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: state.prompt, tag, dest }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setStatusText(data.error);
+        return;
+      }
+      renderResult(data);
+    }
+    async function reverseImage() {
+      if (!gatewayOk) {
+        runBtn.disabled = true;
+        setStatusText("Vision gateway unavailable");
+        return;
+      }
+      if (!selectedFile) {
+        setStatusText("Choose an image first");
+        return;
+      }
+      runBtn.disabled = true;
+      setStages([]);
+      setStatusText("Reversing…");
+      const fd = new FormData();
+      fd.append("file", selectedFile);
+      if (nlTouched) {
+        fd.append("include_nl", nlBox.checked ? "1" : "0");
+      }
+      try {
+        const res = await fetch("/api/reverse", { method: "POST", body: fd });
+        const data = await res.json();
+        if (data.error) {
+          setStages([]);
+          setStatusText(data.error);
+          return;
+        }
+        renderResult(data);
+      } catch (err) {
+        setStages([]);
+        setStatusText(String(err));
+      } finally {
+        if (gatewayOk) runBtn.disabled = false;
+      }
+    }
+    function takeFile(file) {
+      if (!file) return;
+      selectedFile = file;
+      filenameEl.textContent = file.name;
+      reverseImage();
+    }
+    drop.addEventListener("click", () => fileInput.click());
+    drop.addEventListener("dragover", (ev) => { ev.preventDefault(); drop.classList.add("drag"); });
+    drop.addEventListener("dragleave", () => drop.classList.remove("drag"));
+    drop.addEventListener("drop", (ev) => {
+      ev.preventDefault();
+      drop.classList.remove("drag");
+      takeFile(ev.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener("change", () => takeFile(fileInput.files[0]));
+    runBtn.addEventListener("click", reverseImage);
+    copyAllBtn.addEventListener("click", () => copyText(state.text));
+    async function ping() {
+      try {
+        const res = await fetch("/api/ready");
+        const data = await res.json();
+        gatewayOk = !!data.ok;
+        setStatusText(gatewayOk ? "" : (data.error || "Vision gateway unavailable"));
+        runBtn.disabled = !gatewayOk || !selectedFile;
+      } catch {
+        gatewayOk = false;
+        setStatusText("Vision gateway unavailable");
+        runBtn.disabled = true;
+      }
+    }
+    ping();
+  </script>
+</body>
+</html>

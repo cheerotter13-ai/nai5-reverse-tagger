@@ -1,0 +1,1 @@
+lowres, {bad}, error, fewer digits, cropped, {worst quality}, {bad quality}, {bad anatomy}, {bad hands}, missing fingers, extra digit, extra files, username, {artist name}, {text}, {watermark}, {signature}, simple background
