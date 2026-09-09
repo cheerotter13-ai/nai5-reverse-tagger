@@ -314,7 +314,11 @@ def _is_state_verb(verb: str) -> bool:
     text = canonical_action_verb(verb)
     if text in _STATE_VERBS:
         return True
-    return text.startswith("gagged") or text.startswith("gag ")
+    return (
+        text.startswith("gagged")
+        or text.startswith("gag ")
+        or text.startswith("shush")
+    )
 
 
 def _is_pairable_verb(verb: str) -> bool:
@@ -340,6 +344,22 @@ def _pair_or_demote_actions(characters: list[CharacterPrompt]) -> None:
                     if i not in owners:
                         owners.append(i)
                     roles.add(action.role)
+        if _is_state_verb(verb):
+            for ch in characters:
+                kept: list[Action] = []
+                for action in ch.actions:
+                    if action.verb == verb and action.role in {"source", "target", "mutual"}:
+                        if (
+                            action.verb
+                            and action.verb not in ch.pose
+                            and action.verb not in ch.clothing
+                            and action.verb not in ch.expression
+                        ):
+                            ch.pose.append(action.verb)
+                    else:
+                        kept.append(action)
+                ch.actions = kept
+            continue
         if "mutual" in roles:
             continue
         if "source" in roles and "target" in roles:
@@ -349,22 +369,6 @@ def _pair_or_demote_actions(characters: list[CharacterPrompt]) -> None:
             missing = "target" if "source" in roles else "source"
             characters[other].actions.append(Action(role=missing, verb=verb))
             continue
-        if not _is_state_verb(verb):
-            continue
-        for ch in characters:
-            kept: list[Action] = []
-            for action in ch.actions:
-                if action.verb == verb and action.role in {"source", "target"}:
-                    if (
-                        action.verb
-                        and action.verb not in ch.pose
-                        and action.verb not in ch.clothing
-                        and action.verb not in ch.expression
-                    ):
-                        ch.pose.append(action.verb)
-                else:
-                    kept.append(action)
-            ch.actions = kept
 
 
 def _align_action_verbs(characters: list[CharacterPrompt]) -> None:

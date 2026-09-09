@@ -39,22 +39,27 @@
 
 > 示例图含 NSFW。请自行判断浏览环境。
 
-上图反推后大致是这样（可直接贴进 NAI V5）：
+上图用本仓库反推后是这样（可直接贴进 NAI V5）：
 
 ```text
 Prompt:
-2girls, yuri, bondage, shibari, gag, cowboy shot, nsfw, night, full moon, outdoors, brick wall, alley
+2girls, bondage, gag, yuri, night, alley, full moon, starry sky, cowboy shot, from front, nsfw
 
-Two girls standing close together in a narrow brick alley at night. The girl in the hat stands slightly behind and to the right, one arm around the bound girl's shoulder.
+The bound elf stands in front with a bamboo gag while the other girl stands behind her to the right, hugging her from the side with one arm around her shoulder and holding a shushing finger to her own lips.
 
 Character 1:
-girl, pink hair, long hair, pointy ears, elf, blue eyes, large breasts, shibari over clothes, red rope, corset, white shorts, white thighhighs, gag, bit gag, arms behind back, target#hug person
+girl, elysia, pink hair, long hair, gradient hair, blue eyes, pointy ears, elf ears, hair flower, white leotard, white thighhighs, red rope, shibari over clothes, bamboo gag, crotch rope, bound arms, bound thighs, white rose, blush, half-closed eyes, standing, arms behind back, bound wrists, target#hug person
 
 Character 2:
-girl, pink hair, long hair, pointy ears, elf, blue eyes, white dress, white gloves, hat, beret, finger to mouth, shushing, smile, source#hug person
+girl, elysia, pink hair, long hair, blue eyes, pointy ears, elf ears, hair ornament, white dress, white hat, white thighhighs, pink bow, gold trim, smile, shushing, standing, finger to mouth, one arm around, source#hug person
 ```
 
-戴帽子、手臂搂着对方的是 **source**（施动）；双手反绑、被搂着的是 **target**（受动）。口塞只写 `gag` / `bit gag`，不会再单独写 `target#gagged`。
+NAI 里 `source#` 是施动、`target#` 是受动，不是「Character 1 就是 source」。
+
+- Character 1：反绑、口塞、被搂着 → `target#hug person`
+- Character 2：戴帽子、手臂搂着对方 → `source#hug person`
+
+口塞写 `bamboo gag`，不会再单独写没有另一半的 `target#gagged`。
 
 短 tag 负责「长什么样、穿什么」；那句英文负责「谁站在谁侧后方、手臂怎么搂」这种构图关系。
 

@@ -443,6 +443,41 @@ def test_distinct_actions_stay_on_owner():
     assert not any(f"{a.role}#{a.verb}" == "target#gagged" for a in prompt.characters[0].actions)
 
 
+def test_paired_gag_person_is_still_a_state_not_an_action():
+    draft = SceneDraft(
+        count_tag="2girls",
+        themes=[],
+        scene=[],
+        camera=[],
+        nsfw=True,
+        nl="",
+        characters=[
+            CharacterDraft(
+                gender="girl",
+                pose=["arms behind back"],
+                clothing=["bamboo gag"],
+                actions=[
+                    Action(role="target", verb="hug person"),
+                    Action(role="target", verb="gag person"),
+                ],
+            ),
+            CharacterDraft(
+                gender="girl",
+                clothing=["hat"],
+                actions=[
+                    Action(role="source", verb="hug person"),
+                    Action(role="source", verb="gag person"),
+                ],
+            ),
+        ],
+    )
+    prompt = compile(draft, tags=[])
+    assert any(a.role == "target" and a.verb.startswith("hug") for a in prompt.characters[0].actions)
+    assert any(a.role == "source" and a.verb.startswith("hug") for a in prompt.characters[1].actions)
+    assert all("gag" not in a.verb for a in prompt.characters[0].actions)
+    assert all("gag" not in a.verb for a in prompt.characters[1].actions)
+
+
 def test_restrained_character_is_hug_target_not_source():
     draft = SceneDraft(
         count_tag="2girls",
