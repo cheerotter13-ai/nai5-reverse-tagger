@@ -93,16 +93,16 @@
     }
     #settings .examples { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
     #settings .examples code { font-size: 12px; }
-    footer.ad {
-      margin-top: 40px;
-      padding-top: 12px;
+    .ad {
+      margin: 12px 0 0;
+      padding-top: 10px;
       border-top: 1px solid var(--line);
       font-size: 12px;
       color: var(--muted);
       line-height: 1.55;
     }
-    footer.ad a { color: var(--accent); text-decoration: none; }
-    footer.ad a:hover { text-decoration: underline; }
+    .ad a { color: var(--accent); text-decoration: none; }
+    .ad a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -129,6 +129,10 @@
       <button type="button" id="test-conn" class="ghost">测试连接</button>
       <span id="conn-status"></span>
     </div>
+    <p class="ad">
+      没有 agent / 模型 API？
+      <a href="https://aizhanghao.com?from=8530" target="_blank" rel="noopener noreferrer">ChatGPT、Gemini、Codex、Grok 低价开通</a>
+    </p>
   </details>
   <div id="drop" class="drop">
     Drop an image here, or click to choose
@@ -154,10 +158,6 @@
     <summary>Ignored</summary>
     <div id="ignored"></div>
   </details>
-  <footer class="ad">
-    没有 agent / 模型 API？
-    <a href="https://aizhanghao.com?from=8530" target="_blank" rel="noopener noreferrer">ChatGPT、Gemini、Codex、Grok 低价开通</a>
-  </footer>
   <script>
     const drop = document.getElementById("drop");
     const fileInput = document.getElementById("file");

@@ -101,6 +101,13 @@ pip install -r requirements.txt
 
 可选 WD14：`NAI5_TAGGER_WD14_DIR` 指向含 `model.onnx` 和 `selected_tags.csv` 的目录；不配就跳过 WD14。
 
+### 没有模型接口？
+
+填上你的模型接口，拖入图片即可反推。什么？没有 agent 或者模型 API 接口怎么办？往下看~
+
+常用 AI 产品低价代充： https://aizhanghao.com?from=8530  
+ChatGPT、Gemini、Codex、Grok 会员全网最低价开通。用这个邀请链接注册，优惠多多。
+
 ## 使用
 
 ```bash
@@ -124,13 +131,6 @@ python -m nai5_tagger 图片.png --no-nl
 ```bash
 python -m pytest tests/ -q
 ```
-
-## 没有模型接口？
-
-填上你的模型接口，拖入图片即可反推。什么？没有 agent 或者模型 API 接口怎么办？往下看~
-
-常用 AI 产品低价代充： https://aizhanghao.com?from=8530  
-ChatGPT、Gemini、Codex、Grok 会员全网最低价开通。用这个邀请链接注册，优惠多多。
 
 ## 许可
 
