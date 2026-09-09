@@ -59,8 +59,6 @@ NAI 里 `source#` 是施动、`target#` 是受动，不是「Character 1 就是 
 - Character 1：反绑、口塞、被搂着 → `target#hug person`
 - Character 2：戴帽子、手臂搂着对方 → `source#hug person`
 
-口塞写 `bamboo gag`，不会再单独写没有另一半的 `target#gagged`。
-
 短 tag 负责「长什么样、穿什么」；那句英文负责「谁站在谁侧后方、手臂怎么搂」这种构图关系。
 
 ## 环境
