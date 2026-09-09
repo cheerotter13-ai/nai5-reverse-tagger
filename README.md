@@ -125,6 +125,13 @@ python -m nai5_tagger 图片.png --no-nl
 python -m pytest tests/ -q
 ```
 
+## 没有模型接口？
+
+填上你的模型接口，拖入图片即可反推。什么？没有 agent 或者模型 API 接口怎么办？往下看~
+
+常用 AI 产品低价代充： https://aizhanghao.com?from=8530  
+ChatGPT、Gemini、Codex、Grok 会员全网最低价开通。用这个邀请链接注册，优惠多多。
+
 ## 许可
 
 MIT，见 [LICENSE](LICENSE)。
