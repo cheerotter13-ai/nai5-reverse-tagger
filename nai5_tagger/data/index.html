@@ -83,11 +83,43 @@
     #warnings li { color: var(--warn); }
     details { margin-top: 16px; color: var(--muted); }
     .filename { color: var(--muted); margin-top: 8px; }
+    #settings { margin: 0 0 16px; }
+    #settings summary { cursor: pointer; font-weight: 650; }
+    #settings .hint { font-size: 13px; margin: 8px 0 12px; }
+    #settings label { display: block; margin: 10px 0 4px; color: var(--muted); font-size: 13px; }
+    #settings input {
+      width: 100%; padding: 8px 10px; border: 1px solid var(--line);
+      border-radius: 8px; font: inherit; background: #fff;
+    }
+    #settings .examples { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+    #settings .examples code { font-size: 12px; }
   </style>
 </head>
 <body>
   <h1>NAI5 reverse tagger</h1>
   <p class="lead">Upload an anime image. Get a NovelAI V5 base prompt, one spatial/interaction sentence, and per-character Danbooru tags with source# / target#.</p>
+  <details class="box" id="settings" open>
+    <summary>视觉接口（OpenAI 兼容，必填）</summary>
+    <p class="hint">
+      需要一个<strong>能看图</strong>的 Chat Completions 接口。地址只填到 <code>/v1</code>，不要加 <code>/chat/completions</code>。
+      密钥只存在你的浏览器里，不会写入仓库。也可以改项目根目录的 <code>.env</code>（复制 <code>.env.example</code>）。
+    </p>
+    <label for="vlm-base">接口根地址 BASE</label>
+    <input id="vlm-base" autocomplete="off" placeholder="https://api.openai.com/v1">
+    <label for="vlm-model">视觉模型名 MODEL</label>
+    <input id="vlm-model" autocomplete="off" placeholder="gpt-4o">
+    <label for="vlm-key">API Key（接口免鉴权可留空）</label>
+    <input id="vlm-key" type="password" autocomplete="off" placeholder="sk-...">
+    <p class="examples">
+      填写示例：OpenAI 用 <code>https://api.openai.com/v1</code> + <code>gpt-4o</code>；
+      OpenRouter 用 <code>https://openrouter.ai/api/v1</code> + 该站的视觉模型名；
+      其它兼容网关填它文档里的 <code>/v1</code> 根地址和视觉模型名。
+    </p>
+    <div class="row">
+      <button type="button" id="test-conn" class="ghost">测试连接</button>
+      <span id="conn-status"></span>
+    </div>
+  </details>
   <div id="drop" class="drop">
     Drop an image here, or click to choose
     <div class="filename" id="filename"></div>
@@ -125,11 +157,38 @@
     const boxesEl = document.getElementById("boxes");
     const ignoredWrap = document.getElementById("ignored-wrap");
     const ignoredEl = document.getElementById("ignored");
+    const vlmBase = document.getElementById("vlm-base");
+    const vlmModel = document.getElementById("vlm-model");
+    const vlmKey = document.getElementById("vlm-key");
+    const testConnBtn = document.getElementById("test-conn");
+    const connStatus = document.getElementById("conn-status");
+    const LS = {
+      base: "nai5_tagger_vlm_base",
+      model: "nai5_tagger_vlm_model",
+      key: "nai5_tagger_vlm_key",
+    };
     let selectedFile = null;
     let state = { prompt: null, text: "" };
     let gatewayOk = false;
     let nlTouched = false;
     nlBox.addEventListener("change", () => { nlTouched = true; });
+    function readCfg() {
+      return {
+        base: (vlmBase.value || "").trim(),
+        model: (vlmModel.value || "").trim(),
+        key: (vlmKey.value || "").trim(),
+      };
+    }
+    function saveCfg() {
+      const cfg = readCfg();
+      localStorage.setItem(LS.base, cfg.base);
+      localStorage.setItem(LS.model, cfg.model);
+      localStorage.setItem(LS.key, cfg.key);
+    }
+    [vlmBase, vlmModel, vlmKey].forEach((el) => {
+      el.addEventListener("change", saveCfg);
+      el.addEventListener("blur", saveCfg);
+    });
 
     function setStatusText(text) {
       statusText.textContent = text || "";
@@ -288,6 +347,10 @@
       if (nlTouched) {
         fd.append("include_nl", nlBox.checked ? "1" : "0");
       }
+      const cfg = readCfg();
+      if (cfg.base) fd.append("vlm_base", cfg.base);
+      if (cfg.model) fd.append("vlm_model", cfg.model);
+      if (cfg.key) fd.append("vlm_key", cfg.key);
       try {
         const res = await fetch("/api/reverse", { method: "POST", body: fd });
         const data = await res.json();
@@ -321,20 +384,48 @@
     fileInput.addEventListener("change", () => takeFile(fileInput.files[0]));
     runBtn.addEventListener("click", reverseImage);
     copyAllBtn.addEventListener("click", () => copyText(state.text));
-    async function ping() {
+    testConnBtn.addEventListener("click", () => ping(true));
+    async function ping(fromButton) {
+      saveCfg();
+      const cfg = readCfg();
+      if (fromButton) connStatus.textContent = "测试中…";
       try {
-        const res = await fetch("/api/ready");
+        const res = await fetch("/api/ready", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ base: cfg.base, model: cfg.model, key: cfg.key }),
+        });
         const data = await res.json();
         gatewayOk = !!data.ok;
-        setStatusText(gatewayOk ? "" : (data.error || "Vision gateway unavailable"));
+        const msg = gatewayOk ? "接口可用" : (data.error || "接口不可用");
+        if (fromButton) connStatus.textContent = msg;
+        setStatusText(gatewayOk ? "" : (data.error || "Vision API not ready"));
         runBtn.disabled = !gatewayOk || !selectedFile;
       } catch {
         gatewayOk = false;
-        setStatusText("Vision gateway unavailable");
+        if (fromButton) connStatus.textContent = "接口不可用";
+        setStatusText("Vision API not ready");
         runBtn.disabled = true;
       }
     }
-    ping();
+    async function boot() {
+      vlmBase.value = localStorage.getItem(LS.base) || "";
+      vlmModel.value = localStorage.getItem(LS.model) || "";
+      vlmKey.value = localStorage.getItem(LS.key) || "";
+      try {
+        const res = await fetch("/api/config");
+        const data = await res.json();
+        if (!vlmBase.value && data.base) vlmBase.value = data.base;
+        if (!vlmModel.value && data.model) vlmModel.value = data.model;
+        if (!vlmKey.value && data.has_key) {
+          vlmKey.placeholder = "使用环境变量里的密钥";
+        }
+      } catch {
+        /* env prefill optional */
+      }
+      await ping(false);
+    }
+    boot();
   </script>
 </body>
 </html>

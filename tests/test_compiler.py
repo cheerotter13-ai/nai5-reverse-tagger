@@ -183,7 +183,7 @@ def test_source_target_paraphrases_are_aligned():
     assert not any(w.startswith("unpaired_action:") for w in prompt.warnings)
 
 
-def test_unpaired_source_warns_but_keeps_action():
+def test_unpaired_hug_is_paired_on_the_other_character():
     draft = SceneDraft(
         count_tag="2girls",
         themes=[],
@@ -198,7 +198,8 @@ def test_unpaired_source_warns_but_keeps_action():
     )
     prompt = compile(draft, tags=[])
     assert any(a.role == "source" and a.verb == "hug" for a in prompt.characters[0].actions)
-    assert any(w.startswith("unpaired_action:hug") for w in prompt.warnings)
+    assert any(a.role == "target" and a.verb == "hug" for a in prompt.characters[1].actions)
+    assert not any(w.startswith("unpaired_action:") for w in prompt.warnings)
 
 
 def test_same_character_source_and_target_collapse_to_mutual():
@@ -433,10 +434,39 @@ def test_distinct_actions_stay_on_owner():
         ],
     )
     prompt = compile(draft, tags=[])
-    assert prompt.characters[0].actions[0].verb == "gagged"
-    assert prompt.characters[0].actions[0].role == "target"
-    assert prompt.characters[1].actions[0].verb == "shushing"
-    assert prompt.characters[1].actions[0].role == "source"
+    assert all(a.verb != "gagged" for a in prompt.characters[0].actions)
+    assert all(a.verb != "shushing" for a in prompt.characters[1].actions)
+    assert "gagged" in prompt.characters[0].pose
+    assert "shushing" in prompt.characters[1].pose
     assert all(a.verb != "shushing" for a in prompt.characters[0].actions)
     assert all(a.verb != "gagged" for a in prompt.characters[1].actions)
+    assert not any(f"{a.role}#{a.verb}" == "target#gagged" for a in prompt.characters[0].actions)
+
+
+def test_restrained_character_is_hug_target_not_source():
+    draft = SceneDraft(
+        count_tag="2girls",
+        themes=["yuri"],
+        scene=[],
+        camera=["cowboy shot"],
+        nsfw=True,
+        nl="",
+        characters=[
+            CharacterDraft(
+                gender="girl",
+                pose=["arms behind back"],
+                clothing=["shibari over clothes"],
+                actions=[Action(role="source", verb="hug person")],
+            ),
+            CharacterDraft(
+                gender="girl",
+                pose=["finger to mouth"],
+                clothing=["hat"],
+                actions=[Action(role="target", verb="hug person")],
+            ),
+        ],
+    )
+    prompt = compile(draft, tags=[])
+    assert any(a.role == "target" and a.verb.startswith("hug") for a in prompt.characters[0].actions)
+    assert any(a.role == "source" and a.verb.startswith("hug") for a in prompt.characters[1].actions)
 

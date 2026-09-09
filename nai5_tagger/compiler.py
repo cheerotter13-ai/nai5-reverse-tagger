@@ -214,6 +214,159 @@ def _verbs_equivalent(left: str, right: str) -> bool:
     return left in right or right in left
 
 
+_RESTRAINED_HINTS = (
+    "arms behind back",
+    "hands behind back",
+    "bound arms",
+    "armbinder",
+)
+_ARM_ACTION_PREFIXES = ("hug", "embrace", "hold person", "holding person")
+
+
+def _character_blob(ch: CharacterPrompt) -> str:
+    return " ".join((*ch.pose, *ch.clothing, *ch.appearance, ch.identity)).lower()
+
+
+def _is_restrained(ch: CharacterPrompt) -> bool:
+    blob = _character_blob(ch)
+    return any(hint in blob for hint in _RESTRAINED_HINTS)
+
+
+def _is_arm_action(verb: str) -> bool:
+    text = canonical_action_verb(verb)
+    return any(text == prefix or text.startswith(prefix + " ") for prefix in _ARM_ACTION_PREFIXES)
+
+
+def _fix_restrained_hug_roles(characters: list[CharacterPrompt]) -> None:
+    for i, ch in enumerate(characters):
+        if not _is_restrained(ch):
+            continue
+        for action in ch.actions:
+            if not _is_arm_action(action.verb):
+                continue
+            if action.role not in {"source", "mutual"}:
+                continue
+            partner = None
+            for j, other in enumerate(characters):
+                if j == i:
+                    continue
+                for other_action in other.actions:
+                    if other_action.role in {"target", "source", "mutual"} and (
+                        other_action.verb == action.verb
+                        or _verbs_equivalent(other_action.verb, action.verb)
+                    ):
+                        partner = other_action
+                        break
+                if partner is not None:
+                    break
+            action.role = "target"
+            if partner is not None and partner.role in {"target", "mutual"}:
+                partner.role = "source"
+
+
+_STATE_VERBS = frozenset({
+    "gagged",
+    "gag",
+    "bit gag",
+    "bamboo gag",
+    "shushing",
+    "standing",
+    "sitting",
+    "blushing",
+    "blush",
+    "bound",
+    "tied",
+    "tied up",
+    "smiling",
+    "smile",
+    "looking at viewer",
+    "arms behind back",
+    "finger to mouth",
+})
+_PAIRABLE_HINTS = (
+    "hug",
+    "embrace",
+    "kiss",
+    "sex",
+    "penetrat",
+    "sitting on",
+    "holding",
+    "pinning",
+    "covering",
+    "pressing",
+    "talk",
+    "lick",
+    "grab",
+    "carry",
+    "straddle",
+    "spank",
+    "choke",
+    "fingering",
+    "cunnilingus",
+    "fellatio",
+    "anal",
+    "mocking",
+    "watching",
+)
+
+
+def _is_state_verb(verb: str) -> bool:
+    text = canonical_action_verb(verb)
+    if text in _STATE_VERBS:
+        return True
+    return text.startswith("gagged") or text.startswith("gag ")
+
+
+def _is_pairable_verb(verb: str) -> bool:
+    if _is_state_verb(verb):
+        return False
+    text = canonical_action_verb(verb)
+    return any(text == hint or text.startswith(hint) or hint in text for hint in _PAIRABLE_HINTS)
+
+
+def _pair_or_demote_actions(characters: list[CharacterPrompt]) -> None:
+    verbs: list[str] = []
+    for ch in characters:
+        for action in ch.actions:
+            if action.verb not in verbs:
+                verbs.append(action.verb)
+    n = len(characters)
+    for verb in verbs:
+        owners: list[int] = []
+        roles: set[str] = set()
+        for i, ch in enumerate(characters):
+            for action in ch.actions:
+                if action.verb == verb:
+                    if i not in owners:
+                        owners.append(i)
+                    roles.add(action.role)
+        if "mutual" in roles:
+            continue
+        if "source" in roles and "target" in roles:
+            continue
+        if n == 2 and len(owners) == 1 and _is_pairable_verb(verb):
+            other = 1 - owners[0]
+            missing = "target" if "source" in roles else "source"
+            characters[other].actions.append(Action(role=missing, verb=verb))
+            continue
+        if not _is_state_verb(verb):
+            continue
+        for ch in characters:
+            kept: list[Action] = []
+            for action in ch.actions:
+                if action.verb == verb and action.role in {"source", "target"}:
+                    if (
+                        action.verb
+                        and action.verb not in ch.pose
+                        and action.verb not in ch.clothing
+                        and action.verb not in ch.expression
+                    ):
+                        ch.pose.append(action.verb)
+                else:
+                    kept.append(action)
+            ch.actions = kept
+
+
 def _align_action_verbs(characters: list[CharacterPrompt]) -> None:
     verbs = []
     for ch in characters:
@@ -389,6 +542,8 @@ def compile(
         )
 
     _align_action_verbs(characters)
+    _fix_restrained_hug_roles(characters)
+    _pair_or_demote_actions(characters)
     for ch in characters:
         ch.actions = _collapse_actions(ch.actions, warnings)
 
@@ -397,8 +552,11 @@ def compile(
         for action in ch.actions:
             roles_by_verb.setdefault(action.verb, set()).add(action.role)
     for verb, roles in roles_by_verb.items():
-        if "source" in roles and "target" not in roles and "mutual" not in roles:
-            warnings.append(f"unpaired_action:{verb}")
+        if "mutual" in roles:
+            continue
+        if "source" in roles and "target" in roles:
+            continue
+        warnings.append(f"unpaired_action:{verb}")
 
     derived_count = count_tag_from_characters(draft.characters)
     ingested_counts = ", ".join(

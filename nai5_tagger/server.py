@@ -11,7 +11,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from nai5_tagger.compiler import assign_unassigned
-from nai5_tagger.grok_vision import gateway_ready
+from nai5_tagger.config import env_vlm, load_dotenv
+from nai5_tagger.grok_vision import analyze_image, gateway_ready, normalize_base
 from nai5_tagger.pipeline import PipelineError, run_pipeline
 from nai5_tagger.render import render
 from nai5_tagger.types import CompileOptions, Nai5Prompt, nai5_prompt_to_dict
@@ -20,7 +21,10 @@ HOST = "127.0.0.1"
 PORT = 18770
 URL = f"http://{HOST}:{PORT}/"
 _INDEX = Path(__file__).resolve().parent / "data" / "index.html"
-_GATEWAY_UNAVAILABLE = "Vision gateway unavailable. Set NAI5_TAGGER_VLM_BASE and NAI5_TAGGER_VLM_KEY."
+_GATEWAY_UNAVAILABLE = (
+    "Vision API not ready. Fill Base URL and model on this page, "
+    "or set NAI5_TAGGER_VLM_BASE and NAI5_TAGGER_VLM_MODEL."
+)
 
 
 def make_server(host: str, port: int) -> ThreadingHTTPServer:
@@ -109,16 +113,18 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(200, body, "text/html; charset=utf-8")
             return
         if path == "/api/ready":
-            try:
-                ok = bool(gateway_ready())
-            except Exception:
-                ok = False
-            self._json({"ok": ok, "error": "" if ok else _GATEWAY_UNAVAILABLE})
+            self._json(_ready_payload({}))
+            return
+        if path == "/api/config":
+            self._json(_public_config())
             return
         self._json({"error": "not found"}, 404)
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
+        if path == "/api/ready":
+            self._ready()
+            return
         if path == "/api/reverse":
             self._reverse()
             return
@@ -126,6 +132,17 @@ class _Handler(BaseHTTPRequestHandler):
             self._assign()
             return
         self._json({"error": "not found"}, 404)
+
+    def _ready(self) -> None:
+        length = int(self.headers.get("Content-Length") or "0")
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            payload = json.loads(raw.decode("utf-8") or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        self._json(_ready_payload(payload))
 
     def _reverse(self) -> None:
         length = int(self.headers.get("Content-Length") or "0")
@@ -143,6 +160,16 @@ class _Handler(BaseHTTPRequestHandler):
             options = CompileOptions()
         else:
             options = CompileOptions(include_nl=_truthy(include_nl))
+        vlm_base = (fields.get("vlm_base") or "").strip() or None
+        vlm_model = (fields.get("vlm_model") or "").strip() or None
+        vlm_key = (fields.get("vlm_key") or "").strip() or None
+
+        def vision(image_bytes: bytes):
+            kwargs = {"base": vlm_base, "model": vlm_model}
+            if vlm_key is not None:
+                kwargs["api_key"] = vlm_key
+            return analyze_image(image_bytes, **kwargs)
+
         path = None
         fd = -1
         try:
@@ -150,7 +177,7 @@ class _Handler(BaseHTTPRequestHandler):
             os.write(fd, data)
             os.close(fd)
             fd = -1
-            prompt = run_pipeline(path, options)
+            prompt = run_pipeline(path, options, vision_fn=vision)
         except PipelineError as exc:
             self._json({"error": exc.message, "exit_code": exc.exit_code})
             return
@@ -195,7 +222,36 @@ class _Handler(BaseHTTPRequestHandler):
         sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
 
 
+def _public_config() -> dict:
+    settings = env_vlm()
+    return {
+        "base": settings["base"],
+        "model": settings["model"],
+        "has_key": bool(settings["key"]),
+        "wd14_configured": bool(settings["wd14_dir"]),
+    }
+
+
+def _ready_payload(payload: dict) -> dict:
+    base = (payload.get("base") or "").strip() or None
+    key = payload.get("key")
+    api_key = None
+    if isinstance(key, str) and key.strip():
+        api_key = key.strip()
+    try:
+        ok = bool(gateway_ready(base, api_key=api_key))
+    except Exception:
+        ok = False
+    resolved = normalize_base(base or env_vlm()["base"])
+    return {
+        "ok": ok,
+        "error": "" if ok else _GATEWAY_UNAVAILABLE,
+        "base": resolved,
+    }
+
+
 def main() -> int:
+    load_dotenv()
     if _port_in_use(HOST, PORT):
         print(URL)
         return 0

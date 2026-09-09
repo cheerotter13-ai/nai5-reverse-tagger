@@ -30,7 +30,7 @@ def test_ready_and_reverse_and_assign(monkeypatch, tmp_path):
         return fake
 
     monkeypatch.setattr("nai5_tagger.server.run_pipeline", fake_run)
-    monkeypatch.setattr("nai5_tagger.server.gateway_ready", lambda: True)
+    monkeypatch.setattr("nai5_tagger.server.gateway_ready", lambda *args, **kwargs: True)
     httpd = make_server("127.0.0.1", 0)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -39,6 +39,14 @@ def test_ready_and_reverse_and_assign(monkeypatch, tmp_path):
     conn.request("GET", "/api/ready")
     ready = json.loads(conn.getresponse().read())
     assert ready["ok"] is True
+    conn.request("GET", "/api/config")
+    cfg = json.loads(conn.getresponse().read())
+    assert "base" in cfg
+    assert "model" in cfg
+    assert "has_key" in cfg
+    conn.request("POST", "/api/ready", body=b'{"base":"https://example.test/v1","model":"x"}', headers={"Content-Type": "application/json"})
+    posted = json.loads(conn.getresponse().read())
+    assert posted["ok"] is True
     img = tmp_path / "x.png"
     from PIL import Image
     Image.new("RGB", (8, 8), "red").save(img)

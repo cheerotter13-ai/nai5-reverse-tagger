@@ -3,17 +3,15 @@ from __future__ import annotations
 import base64
 import io
 import json
-import os
 import time
 import urllib.error
 import urllib.request
 
 from PIL import Image
 
+from nai5_tagger.config import env_vlm, load_dotenv
 from nai5_tagger.types import SceneDraft
 
-_DEFAULT_BASE = "http://127.0.0.1:8000/v1"
-_DEFAULT_MODEL = "grok-4.6"
 _CHAT_TIMEOUT = 120
 _READY_TIMEOUT = 5
 _RETRY_SLEEP = 5
@@ -32,10 +30,21 @@ SYSTEM_PROMPT = (
     "Never write phrases such as standing close with body touching the other character. "
     "Split appearance, clothing, pose, expression, and actions per person. "
     "Interactions use actions with role source, target, or mutual. "
+    "source is the performer doing the action; target is the recipient; "
+    "mutual is both doing the same action to each other. "
+    "Do not assign source or target by left-to-right order or Character 1. "
+    "If one person's arm is around the other, that person is source#hug person "
+    "and the one being held is target#hug person. "
+    "Arms behind back, bound wrists, or shibari that pins the arms cannot hug: "
+    "that character is target of hug or embrace, never source. "
     "verb is a lowercase English phrase without a role prefix. "
     "The source and target of one interaction MUST share the identical verb, "
     "for example source#sitting on person and target#sitting on person. "
     "Do not paraphrase (never sits on vs gets sat on, never pins vs is pinned). "
+    "source# and target# are only for one character acting on another. "
+    "Every source#verb needs the same verb as target# on the other person. "
+    "States such as gagged, standing, blush, shushing, bamboo gag belong in "
+    "clothing, pose, or expression, never as unpaired target#gagged. "
     "nl is exactly one English sentence. Use nl for complex interactions that short tags "
     "cannot express well, and for spatial scene interaction: who is in front or behind, "
     "who is pressed to a wall, who sits on whose face, grip, insertion, and contact. "
@@ -65,7 +74,7 @@ USER_PROMPT = (
     "nl is one English sentence for spatial layout and complex interaction only. "
     "Each character object uses: gender (girl|boy|other), identity, appearance, "
     "clothing, pose, expression, actions. "
-    "Each action uses: role (source|target|mutual), verb."
+    "Each action uses: role (source=performer|target=recipient|mutual), verb."
 )
 
 
@@ -74,11 +83,15 @@ class GrokVisionError(Exception):
 
 
 def gateway_ready(base: str | None = None, opener=None, api_key: str | None = None) -> bool:
+    load_dotenv()
     if opener is None:
         opener = urllib.request.urlopen
+    resolved = _resolve_base(base)
+    if not resolved:
+        return False
     if api_key is None:
-        api_key = os.environ.get("NAI5_TAGGER_VLM_KEY", "")
-    url = _join(_resolve_base(base), "models")
+        api_key = env_vlm()["key"]
+    url = _join(resolved, "models")
     headers = {}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -98,13 +111,23 @@ def analyze_image(
     api_key: str | None = None,
     opener=None,
 ) -> SceneDraft:
+    load_dotenv()
     if opener is None:
         opener = urllib.request.urlopen
+    settings = env_vlm()
+    resolved = _resolve_base(base)
+    if not resolved:
+        raise GrokVisionError(
+            "set NAI5_TAGGER_VLM_BASE to an OpenAI-compatible vision /v1 URL"
+        )
     if model is None:
-        model = os.environ.get("NAI5_TAGGER_VLM_MODEL", _DEFAULT_MODEL)
+        model = settings["model"]
+    model = (model or "").strip()
+    if not model:
+        raise GrokVisionError("set NAI5_TAGGER_VLM_MODEL to a vision model name")
     if api_key is None:
-        api_key = os.environ.get("NAI5_TAGGER_VLM_KEY", "")
-    url = _join(_resolve_base(base), "chat/completions")
+        api_key = settings["key"]
+    url = _join(resolved, "chat/completions")
     payload = {
         "model": model,
         "messages": [
@@ -145,10 +168,28 @@ def analyze_image(
     return _draft_from_response(body)
 
 
+def normalize_base(base: str) -> str:
+    text = (base or "").strip()
+    if not text:
+        return ""
+    text = text.rstrip("/")
+    lower = text.lower()
+    for suffix in ("/chat/completions", "/completions", "/models"):
+        if lower.endswith(suffix):
+            text = text[: -len(suffix)].rstrip("/")
+            lower = text.lower()
+            break
+    path = lower.split("://", 1)[-1]
+    slash = path.find("/")
+    rest = path[slash:] if slash >= 0 else ""
+    if "/v1" not in rest:
+        text = text + "/v1"
+    return text
+
+
 def _resolve_base(base: str | None) -> str:
-    if base is None:
-        return os.environ.get("NAI5_TAGGER_VLM_BASE", _DEFAULT_BASE)
-    return base
+    raw = base if base is not None else env_vlm()["base"]
+    return normalize_base(raw)
 
 
 def _join(base: str, path: str) -> str:

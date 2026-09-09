@@ -1,6 +1,18 @@
 import io
 import json
-from nai5_tagger.grok_vision import GrokVisionError, analyze_image, gateway_ready
+import pytest
+from nai5_tagger.grok_vision import (
+    GrokVisionError,
+    analyze_image,
+    gateway_ready,
+    normalize_base,
+)
+
+
+@pytest.fixture(autouse=True)
+def vlm_env(monkeypatch):
+    monkeypatch.setenv("NAI5_TAGGER_VLM_BASE", "https://example.test/v1")
+    monkeypatch.setenv("NAI5_TAGGER_VLM_MODEL", "vision-test")
 
 
 class FakeResp:
@@ -47,7 +59,7 @@ def test_analyze_image_parses_json_content():
     draft = analyze_image(b"\x89PNG", opener=opener)
     assert draft.count_tag == "2girls"
     assert draft.characters[0].actions[0].role == "source"
-    assert calls[0]["model"] == "grok-4.6"
+    assert calls[0]["model"] == "vision-test"
     assert "char1" not in json.dumps(calls[0]["messages"][0])
     assert "shiny skin" not in json.dumps(calls[0]["messages"][0]).lower()
 
@@ -87,7 +99,7 @@ def test_gateway_ready_false_on_error():
     def opener(req, timeout=0):
         raise OSError("down")
 
-    assert gateway_ready("http://127.0.0.1:8000/v1", opener=opener) is False
+    assert gateway_ready("https://example.test/v1", opener=opener) is False
 
 
 def test_gateway_ready_sends_authorization(monkeypatch):
@@ -98,7 +110,7 @@ def test_gateway_ready_sends_authorization(monkeypatch):
         return FakeResp(200, '{"data":[]}')
 
     monkeypatch.setenv("NAI5_TAGGER_VLM_KEY", "test-key")
-    assert gateway_ready("http://127.0.0.1:8000/v1", opener=opener) is True
+    assert gateway_ready("https://example.test/v1", opener=opener) is True
     assert "Bearer test-key" in str(seen["auth"])
 
 
@@ -123,3 +135,14 @@ def test_system_prompt_uses_danbooru_skeleton_and_spatial_nl():
     assert "spatial" in text
     assert "complex" in text
     assert "do not restate" in text or "not restate" in text
+    assert "performer" in text
+    assert "unpaired" in text or "gagged" in text
+
+
+def test_normalize_base_appends_v1_and_strips_chat_path():
+    assert normalize_base("https://api.openai.com") == "https://api.openai.com/v1"
+    assert (
+        normalize_base("https://api.openai.com/v1/chat/completions")
+        == "https://api.openai.com/v1"
+    )
+    assert normalize_base("https://openrouter.ai/api/v1") == "https://openrouter.ai/api/v1"

@@ -4,12 +4,14 @@ import argparse
 import json
 import sys
 
+from nai5_tagger.config import load_dotenv
 from nai5_tagger.pipeline import PipelineError, run_pipeline
 from nai5_tagger.render import render
 from nai5_tagger.types import CompileOptions, nai5_prompt_to_dict
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_dotenv()
     parser = argparse.ArgumentParser(prog="nai5_tagger")
     parser.add_argument("image")
     parser.add_argument("--json", action="store_true")
