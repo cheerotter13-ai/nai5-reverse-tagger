@@ -20,10 +20,7 @@
    - `source#动词` = **施动者**（正在做这件事的人）
    - `target#动词` = **受动者**（被做的人）
    - 两边动词必须相同，例如 `source#hug person` + `target#hug person`
-   - 口塞、站立、脸红这类**状态**写普通 tag（`bamboo gag`），不要单独冒出一个没有另一半的 `target#gagged`
 
-5. **可粘贴进 NAI5**  
-   网页分框复制。不反推画师串、质量词、油光材质。
 
 ## 和常见 Tagger 差在哪
 
