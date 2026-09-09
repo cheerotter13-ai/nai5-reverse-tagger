@@ -213,7 +213,7 @@
       }
     }
     function parseSections(text) {
-      const matches = [...text.matchAll(/^(Prompt:|Character \d+:|UC:)$/gm)];
+      const matches = [...text.matchAll(/^(Prompt:|Character \d+:)$/gm)];
       return matches.map((m, i) => {
         const title = m[1].replace(/:$/, "");
         const start = m.index + m[0].length;
