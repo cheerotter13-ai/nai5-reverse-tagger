@@ -3,6 +3,8 @@ __pycache__/
 .venv/
 venv/
 .env
+启动反推.local.ps1
+启动反推.local.bat
 *.onnx
 .pytest_cache/
 .grok/

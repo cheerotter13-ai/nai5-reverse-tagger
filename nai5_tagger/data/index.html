@@ -423,19 +423,22 @@
       }
     }
     async function boot() {
+      const panel = document.getElementById("settings");
       vlmBase.value = localStorage.getItem(LS.base) || "";
       vlmModel.value = localStorage.getItem(LS.model) || "";
       vlmKey.value = localStorage.getItem(LS.key) || "";
       try {
         const res = await fetch("/api/config");
         const data = await res.json();
-        if (!vlmBase.value && data.base) vlmBase.value = data.base;
-        if (!vlmModel.value && data.model) vlmModel.value = data.model;
-        if (!vlmKey.value && data.has_key) {
+        if (data.base) vlmBase.value = data.base;
+        if (data.model) vlmModel.value = data.model;
+        if (data.has_key) {
+          vlmKey.value = "";
           vlmKey.placeholder = "使用环境变量里的密钥";
         }
+        panel.open = !(data.base && data.model && data.has_key);
       } catch {
-        /* env prefill optional */
+        panel.open = true;
       }
       await ping(false);
     }
