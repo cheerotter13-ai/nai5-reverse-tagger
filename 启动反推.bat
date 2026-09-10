@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0"
-if exist "%~dp0启动反推.local.ps1" (
-  powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0启动反推.local.ps1"
+if exist "%~dp0start-local.ps1" (
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0start-local.ps1"
   if errorlevel 1 pause
   exit /b %errorlevel%
 )

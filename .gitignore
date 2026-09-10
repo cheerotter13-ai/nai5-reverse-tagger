@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 venv/
 .env
+start-local.ps1
 启动反推.local.ps1
 启动反推.local.bat
 *.onnx

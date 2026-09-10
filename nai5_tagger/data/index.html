@@ -436,7 +436,9 @@
           vlmKey.value = "";
           vlmKey.placeholder = "使用环境变量里的密钥";
         }
-        panel.open = !(data.base && data.model && data.has_key);
+        const ready = !!(data.base && data.model && data.has_key);
+        panel.open = !ready;
+        panel.hidden = ready;
       } catch {
         panel.open = true;
       }
